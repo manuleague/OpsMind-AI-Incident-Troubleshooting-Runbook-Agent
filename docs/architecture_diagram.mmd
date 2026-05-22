@@ -1,0 +1,11 @@
+flowchart LR
+    U["Engineer enters incident"] --> UI["Streamlit UI or CLI"]
+    UI --> A["Incident Analyzer"]
+    A --> R["Retrieval Layer"]
+    R --> FIQ["Foundry IQ Knowledge Base"]
+    R --> LR["Local demo retriever fallback"]
+    FIQ --> C["Grounded chunks and citations"]
+    LR --> C
+    C --> P["Reasoning prompts and safety guardrails"]
+    P --> O["Structured troubleshooting response"]
+    O --> UI

@@ -1,0 +1,14 @@
+{
+  "top_k": 4,
+  "min_score": 0.08,
+  "preferred_categories": [
+    "compute",
+    "networking",
+    "application",
+    "storage",
+    "kubernetes",
+    "security"
+  ],
+  "retrieval_instruction": "Retrieve operational runbooks, known incidents, validation checks, rollback guidance, and escalation policies relevant to the incident. Prefer sources with explicit symptoms, diagnostic commands, safe remediation, and validation steps."
+}
+

@@ -1,0 +1,33 @@
+[
+  {
+    "title": "Checkout API 502 after deployment",
+    "severity": "high",
+    "environment": "prod",
+    "description": "Checkout API is returning 502 after deployment and users cannot complete payment."
+  },
+  {
+    "title": "Kubernetes pod crash loop",
+    "severity": "high",
+    "environment": "prod",
+    "description": "The orders pod is in CrashLoopBackOff after a new image rollout. Restart count keeps increasing."
+  },
+  {
+    "title": "Linux VM disk full",
+    "severity": "high",
+    "environment": "prod",
+    "description": "Linux VM disk usage is 96 percent and the application reports write failures."
+  },
+  {
+    "title": "DNS resolution failure",
+    "severity": "medium",
+    "environment": "prod",
+    "description": "Users in one region cannot resolve api.contoso.internal. Some resolvers return NXDOMAIN."
+  },
+  {
+    "title": "Azure VM unreachable",
+    "severity": "high",
+    "environment": "prod",
+    "description": "Azure VM became unreachable by SSH after deployment. Health probe is failing."
+  }
+]
+

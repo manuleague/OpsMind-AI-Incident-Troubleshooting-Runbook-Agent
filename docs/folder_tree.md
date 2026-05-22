@@ -1,0 +1,56 @@
+# Folder Tree
+
+```text
+OpsMind-AI-Incident-Troubleshooting-Runbook-Agent/
+  app/
+    opsmind/
+      __init__.py
+      analyzer.py
+      cli.py
+      config.py
+      formatter.py
+      foundry_iq.py
+      local_retriever.py
+      models.py
+      safety.py
+      ui_streamlit.py
+  config/
+    app.example.env
+    retrieval_config.json
+  demo/
+    assets/
+      .gitkeep
+    demo_script.md
+    sample_incidents.json
+  docs/
+    architecture.md
+    architecture_diagram.mmd
+    folder_tree.md
+    implementation_plan.md
+    judging_optimization.md
+    kb_design.md
+    task_breakdown.md
+  knowledge_base/
+    runbooks/
+      RB-CPU-001-linux-vm-cpu-spike.md
+      RB-DEPLOY-001-failed-deployment.md
+      RB-DISK-001-linux-disk-full.md
+      RB-DNS-001-resolution-failure.md
+      RB-HTTP-001-app-502-503.md
+      RB-K8S-001-pod-crashloop.md
+      RB-SSL-001-certificate-expiry.md
+      RB-VM-001-azure-vm-connectivity.md
+  prompts/
+    answer_formatting.md
+    fallback.md
+    retrieval.md
+    safety_guardrails.md
+    system.md
+  tests/
+    test_analyzer.py
+    test_local_retriever.py
+  pyproject.toml
+  README.md
+  requirements.txt
+```
+
