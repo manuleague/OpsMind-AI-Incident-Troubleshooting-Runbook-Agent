@@ -1,18 +1,23 @@
 [project]
 name = "opsmind-ai"
 version = "0.1.0"
-description = "Incident troubleshooting and runbook reasoning agent using Microsoft Foundry IQ."
+description = "AI-powered incident troubleshooting agent using Microsoft Foundry IQ"
 requires-python = ">=3.11"
 dependencies = [
-  "streamlit>=1.36.0",
-  "requests>=2.32.0",
-  "python-dotenv>=1.0.1",
+  "azure-ai-projects>=1.0.0",
+  "azure-identity>=1.15.0",
+  "azure-core>=1.30.0",
+  "requests>=2.31.0",
+  "python-dotenv>=1.0.0",
+  "streamlit>=1.35.0",
+  "pytest>=8.0.0",
+  "pytest-cov>=5.0.0",
 ]
 
-[project.optional-dependencies]
-dev = ["pytest>=8.2.0"]
+[project.scripts]
+opsmind = "app.opsmind.cli:main"
 
 [tool.pytest.ini_options]
 pythonpath = ["."]
 testpaths = ["tests"]
-
+addopts = "-v --tb=short"

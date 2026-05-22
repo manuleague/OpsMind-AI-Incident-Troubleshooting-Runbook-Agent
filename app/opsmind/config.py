@@ -21,6 +21,8 @@ class Settings:
     foundry_iq_knowledge_base_id: str
     foundry_iq_api_key: str
     foundry_iq_api_version: str
+    azure_ai_project_connection_string: str = ""
+    foundry_iq_auth_mode: str = "credential"
     top_k: int = 4
 
 
@@ -31,10 +33,11 @@ def load_settings() -> Settings:
     return Settings(
         retrieval_mode=os.getenv("OPSMIND_RETRIEVAL_MODE", "local").lower(),
         kb_path=(ROOT / os.getenv("OPSMIND_KB_PATH", "knowledge_base/runbooks")).resolve(),
+        azure_ai_project_connection_string=os.getenv("AZURE_AI_PROJECT_CONNECTION_STRING", ""),
         foundry_iq_endpoint=os.getenv("FOUNDRY_IQ_ENDPOINT", "").rstrip("/"),
         foundry_iq_knowledge_base_id=os.getenv("FOUNDRY_IQ_KNOWLEDGE_BASE_ID", ""),
         foundry_iq_api_key=os.getenv("FOUNDRY_IQ_API_KEY", ""),
         foundry_iq_api_version=os.getenv("FOUNDRY_IQ_API_VERSION", "2025-11-01-preview"),
+        foundry_iq_auth_mode=os.getenv("FOUNDRY_IQ_AUTH_MODE", "credential").lower(),
         top_k=int(os.getenv("OPSMIND_TOP_K", "4")),
     )
-

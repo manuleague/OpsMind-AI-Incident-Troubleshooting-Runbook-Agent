@@ -1,39 +1,42 @@
-# 3 to 5 Minute Demo Script
+# OpsMind AI — Demo Script (4 minutes)
 
-## Scenario
+## Setup (before recording)
 
-Use the incident: "Checkout API is returning 502 after deployment and users cannot complete payment."
+- Set OPSMIND_RETRIEVAL_MODE=foundry (or local if Foundry IQ not available)
+- Run: streamlit run app/opsmind/ui_streamlit.py
+- Open browser at localhost:8501
 
-## Script
+## Scene 1 — Introduction (30 seconds)
 
-1. Open with the problem.
-   "On-call engineers lose time jumping between alerts, runbooks, deployments, and tribal knowledge. OpsMind AI turns an incident into a grounded troubleshooting plan."
+Say: "This is OpsMind AI — an incident troubleshooting agent that retrieves grounded,
+cited guidance from a Microsoft Foundry IQ knowledge base."
+Show: the Streamlit home screen with the input area visible.
 
-2. Show the home screen.
-   Point out incident input, severity selector, and safety note.
+## Scene 2 — Demo incident 1: Linux VM CPU spike (60 seconds)
 
-3. Submit the incident.
-   Select severity `high`, environment `prod`, then click Analyze Incident.
+Type: "Linux VM CPU spike above 95% for the last 10 minutes, application latency degraded"
+Select: Severity = sev2, Environment = production
+Click Analyze
+Show: full response including Evidence (with Foundry IQ citations), Diagnosis, Remediation steps
+Highlight: the citation links and the Human Review Required warning
 
-4. Explain Foundry IQ.
-   "The agent retrieves from a Foundry IQ knowledge base of runbooks and incident documents. It does not answer from memory alone."
+## Scene 3 — Demo incident 2: Kubernetes pod crashloop (60 seconds)
 
-5. Walk through the response.
-   Show summary, evidence, likely diagnosis, remediation, validation checks, and escalation triggers.
+Type: "Kubernetes deployment pod restarting every 30 seconds, crashloopbackoff error"
+Select: Severity = sev1, Environment = production
+Click Analyze
+Show: how the agent classifies the incident differently and retrieves Kubernetes-specific runbook
+Highlight: different remediation steps per category
 
-6. Highlight citations.
-   Open the cited 502/503 runbook and show the response maps to source content.
+## Scene 4 — Show Foundry IQ value (60 seconds)
 
-7. Highlight safety.
-   Point to human review warnings for rollback or production restart.
+Switch to sidebar and show the retrieval mode badge (Foundry IQ / local)
+Explain: "All answers are grounded — the agent does not fabricate steps.
+Every recommendation cites the source document it retrieved from Foundry IQ."
+Show: the Evidence expander with citation IDs
 
-8. Close with value.
-   "The result is faster triage, safer remediation, and less operational guesswork."
+## Scene 5 — Close (30 seconds)
 
-## Demo Tips
-
-- Keep the query realistic and urgent.
-- Show citations early.
-- Do not claim autonomous remediation.
-- Mention that local retrieval is a demo fallback and Foundry IQ is the intended production retrieval layer.
-
+Show: GitHub repository with clean README
+Say: "OpsMind AI is open source, built on Python and Microsoft Foundry IQ,
+and designed for cloud operations engineers who need fast, safe, cited incident guidance."

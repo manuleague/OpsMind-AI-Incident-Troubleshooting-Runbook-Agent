@@ -1,10 +1,15 @@
 from __future__ import annotations
 
+import logging
+
 from app.opsmind.config import Settings, load_settings
 from app.opsmind.foundry_iq import FoundryIQClient
 from app.opsmind.local_retriever import LocalMarkdownRetriever
 from app.opsmind.models import ConfidenceLevel, IncidentInput, RetrievedSource, TroubleshootingResponse
 from app.opsmind.safety import assess_risk, human_review_warnings
+
+
+logger = logging.getLogger(__name__)
 
 
 CATEGORY_KEYWORDS = {
@@ -24,7 +29,9 @@ class IncidentAnalyzer:
         self.foundry = FoundryIQClient(self.settings)
 
     def analyze(self, incident: IncidentInput) -> TroubleshootingResponse:
+        logger.info("Analyzing incident: %s", incident.description[:80])
         sources = self._retrieve(incident)
+        logger.info("Retrieval mode: %s, results: %d", self.settings.retrieval_mode, len(sources))
         category = classify_incident(incident.description, sources)
         confidence = confidence_from_sources(sources)
         combined_text = "\n".join(source.content for source in sources)
@@ -32,6 +39,7 @@ class IncidentAnalyzer:
         citations = [source.citation() for source in sources]
 
         if not sources:
+            logger.warning("No sources retrieved for: %s", incident.description[:80])
             return TroubleshootingResponse(
                 incident_summary=summarize_incident(incident),
                 likely_category=category,
@@ -46,6 +54,7 @@ class IncidentAnalyzer:
                 citations=[],
             )
 
+        logger.debug("Category: %s, Confidence: %s", category, confidence)
         return TroubleshootingResponse(
             incident_summary=summarize_incident(incident),
             likely_category=category,
