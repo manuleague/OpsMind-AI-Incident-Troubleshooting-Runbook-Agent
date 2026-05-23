@@ -12,22 +12,16 @@ logger = logging.getLogger(__name__)
 
 class FoundryIQClient:
     """Retrieves grounded knowledge from the Foundry Agent (foundry-agent)
-    using the azure-ai-agents SDK (AgentsClient + threads/messages API).
-
-    Falls back to direct REST against the Foundry project endpoint if the
-    azure-ai-agents package is not installed.
+    using the azure-ai-agents SDK or REST fallback.
 
     Required .env variables:
-        AZURE_AI_PROJECT_CONNECTION_STRING  - project endpoint, e.g.
+        AZURE_AI_PROJECT_CONNECTION_STRING  - e.g.
             https://opsmind-foundry.services.ai.azure.com/api/projects/proj-default
         FOUNDRY_IQ_API_KEY                  - API key from Foundry Home
-        FOUNDRY_IQ_KNOWLEDGE_BASE_ID        - agent ID shown in Foundry portal
-                                              (use the agent name: foundry-agent)
-        FOUNDRY_IQ_AUTH_MODE                - "apikey" (recommended) or "credential"
+        FOUNDRY_IQ_AUTH_MODE                - "apikey" (recommended)
         FOUNDRY_IQ_API_VERSION              - keep at 2025-05-15-preview
     """
 
-    # The agent name as it appears in Foundry portal
     AGENT_NAME = "foundry-agent"
 
     def __init__(self, settings: Settings) -> None:
@@ -52,9 +46,7 @@ class FoundryIQClient:
         try:
             return self._agents_sdk_search(query=query, top_k=top_k)
         except ImportError as exc:
-            logger.warning(
-                "azure-ai-agents SDK not installed; falling back to REST: %s", exc
-            )
+            logger.warning("azure-ai-agents not installed; falling back to REST: %s", exc)
         except Exception:
             logger.exception("Foundry IQ agents SDK failed; falling back to REST")
 
@@ -65,36 +57,44 @@ class FoundryIQClient:
     # ------------------------------------------------------------------
 
     def _agents_sdk_search(self, query: str, top_k: int) -> list[RetrievedSource]:
-        """Use AgentsClient to create a thread, run the foundry-agent,
-        and parse its reply as retrieved sources."""
+        """Use AgentsClient with api-key header credential."""
         from azure.ai.agents import AgentsClient  # type: ignore
         from azure.ai.agents.models import MessageTextContent  # type: ignore
         from azure.core.credentials import AzureKeyCredential
 
         endpoint = self._base_endpoint()
-        credential = AzureKeyCredential(self.settings.foundry_iq_api_key)
+        api_key = self.settings.foundry_iq_api_key
 
-        with AgentsClient(endpoint=endpoint, credential=credential) as client:
-            # Resolve agent by name
+        # AgentsClient accepts keyword_only 'api_key' in azure-ai-agents >= 1.0
+        # which sets the api-key header directly (no OAuth token needed).
+        try:
+            client = AgentsClient(endpoint=endpoint, api_key=api_key)
+        except TypeError:
+            # Older builds: pass a SyncTokenCredential shim
+            client = AgentsClient(
+                endpoint=endpoint,
+                credential=_ApiKeyShim(api_key),
+            )
+
+        with client:
             agent = self._resolve_agent(client)
 
-            # Create thread + message
             thread = client.threads.create()
             client.messages.create(
                 thread_id=thread.id,
                 role="user",
                 content=(
-                    f"Retrieve the top {top_k} runbook(s) most relevant to this "
-                    f"incident. Return each runbook title, its doc_id, and a "
-                    f"diagnostic summary. Incident: {query}"
+                    f"Retrieve the top {top_k} runbooks most relevant to this incident. "
+                    f"For each, include: doc_id, title, diagnostic steps, remediation steps. "
+                    f"Incident: {query}"
                 ),
             )
 
-            # Run and wait
-            run = client.runs.create_and_process(thread_id=thread.id, agent_id=agent.id)
+            run = client.runs.create_and_process(
+                thread_id=thread.id, agent_id=agent.id
+            )
             logger.info("Agent run status: %s", run.status)
 
-            # Extract text from last assistant message
             messages = client.messages.list(thread_id=thread.id)
             for msg in messages:
                 if msg.role == "assistant":
@@ -111,57 +111,36 @@ class FoundryIQClient:
                             score=1.0,
                             metadata={"retriever": "foundry_iq_agents_sdk"},
                         )]
-
         return []
 
     def _resolve_agent(self, client: Any) -> Any:
-        """Find the foundry-agent by name from the agents list."""
         for agent in client.list_agents():
             if agent.name == self.AGENT_NAME:
                 logger.info("Resolved agent id: %s", agent.id)
                 return agent
         raise RuntimeError(
-            f"Agent '{self.AGENT_NAME}' not found in Foundry project. "
-            "Check the agent name in Foundry portal > Build > Agents."
+            f"Agent '{self.AGENT_NAME}' not found. "
+            "Check Foundry portal > Build > Agents."
         )
 
     # ------------------------------------------------------------------
-    # Path B: REST fallback via Azure OpenAI chat completions endpoint
+    # Path B: REST fallback — Azure OpenAI chat completions
     # ------------------------------------------------------------------
 
     def _rest_chat_search(self, query: str, top_k: int) -> list[RetrievedSource]:
-        """Call the Azure OpenAI chat completions endpoint that backs the
-        Foundry project. Uses the project's OpenAI endpoint derived from
-        AZURE_AI_PROJECT_CONNECTION_STRING."""
         import requests
 
-        openai_endpoint = self._openai_endpoint()
         url = (
-            f"{openai_endpoint}/openai/deployments/gpt-4o/chat/completions"
+            f"{self._openai_endpoint()}/openai/deployments/gpt-4o/chat/completions"
             f"?api-version=2025-01-01-preview"
         )
 
         system_prompt = (
-            "You are OpsMind AI, an expert incident troubleshooting assistant. "
-            "When given an incident description, retrieve and summarise the most "
-            "relevant runbooks. Include doc_id, title, diagnostic steps, and "
-            "remediation actions. Always cite your sources."
+            "You are OpsMind AI, an expert incident troubleshooting assistant for "
+            "cloud and DevOps engineers. When given an incident, retrieve and "
+            "summarise the most relevant runbooks. Include doc_id, title, "
+            "diagnostic steps, and remediation actions. Always cite your sources."
         )
-
-        payload = {
-            "messages": [
-                {"role": "system", "content": system_prompt},
-                {
-                    "role": "user",
-                    "content": (
-                        f"Retrieve top {top_k} runbooks for: {query}. "
-                        "Return title, doc_id, and a brief diagnostic + remediation summary."
-                    ),
-                },
-            ],
-            "max_tokens": 1200,
-            "temperature": 0.1,
-        }
 
         response = requests.post(
             url,
@@ -169,14 +148,26 @@ class FoundryIQClient:
                 "api-key": self.settings.foundry_iq_api_key,
                 "Content-Type": "application/json",
             },
-            json=payload,
+            json={
+                "messages": [
+                    {"role": "system", "content": system_prompt},
+                    {
+                        "role": "user",
+                        "content": (
+                            f"Top {top_k} runbooks for: {query}. "
+                            "Include doc_id, title, diagnostic steps, remediation."
+                        ),
+                    },
+                ],
+                "max_tokens": 1500,
+                "temperature": 0.1,
+            },
             timeout=30,
         )
         response.raise_for_status()
-        data = response.json()
 
-        content = data["choices"][0]["message"]["content"]
-        logger.info("Foundry REST chat fallback returned %d chars", len(content))
+        content = response.json()["choices"][0]["message"]["content"]
+        logger.info("Foundry REST returned %d chars", len(content))
 
         return [
             RetrievedSource(
@@ -194,17 +185,11 @@ class FoundryIQClient:
     # ------------------------------------------------------------------
 
     def _base_endpoint(self) -> str:
-        """Return base Foundry endpoint (no /api/projects path)."""
         raw = (self.settings.azure_ai_project_connection_string or "").rstrip("/")
         return raw.split("/api/projects")[0] if "/api/projects" in raw else raw
 
     def _openai_endpoint(self) -> str:
-        """Return the Azure OpenAI endpoint for REST fallback.
-        Converts https://opsmind-foundry.services.ai.azure.com
-        to      https://opsmind-foundry.openai.azure.com
-        """
         base = self._base_endpoint()
-        # Replace .services.ai.azure.com with .openai.azure.com
         if ".services.ai.azure.com" in base:
             return base.replace(".services.ai.azure.com", ".openai.azure.com")
         return base
@@ -212,3 +197,17 @@ class FoundryIQClient:
     @staticmethod
     def _is_azure_exception(exc: Exception, name: str) -> bool:
         return exc.__class__.__name__ == name
+
+
+class _ApiKeyShim:
+    """Minimal credential shim that injects api-key header for azure-ai-agents
+    builds that expect a credential object instead of a bare api_key kwarg."""
+
+    def __init__(self, key: str) -> None:
+        self._key = key
+
+    def get_token(self, *args: Any, **kwargs: Any) -> Any:  # noqa: ARG002
+        raise NotImplementedError("_ApiKeyShim does not support OAuth token flow")
+
+    def update_request(self, request: Any) -> None:  # called by some pipeline policies
+        request.http_request.headers["api-key"] = self._key
