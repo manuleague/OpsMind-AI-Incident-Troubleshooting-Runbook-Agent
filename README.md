@@ -1,193 +1,190 @@
-# 🧠 OpsMind AI — Incident Troubleshooting & Runbook Agent
+# 🧠 OpsMind AI — Incident Troubleshooting Agent
 
-> AI-powered cloud ops assistant that retrieves grounded, cited troubleshooting guidance from a
-> Microsoft Foundry IQ knowledge base.
+> **Agents League Hackathon 2026** · Powered by [Microsoft Azure AI Foundry](https://ai.azure.com)
 
-**Agents League Hackathon 2026 | Track: Reasoning Agents | IQ Layer: Foundry IQ**
+[![Python](https://img.shields.io/badge/Python-3.11+-blue?logo=python)](https://python.org)
+[![Streamlit](https://img.shields.io/badge/Streamlit-1.x-red?logo=streamlit)](https://streamlit.io)
+[![Azure Foundry](https://img.shields.io/badge/Azure-AI%20Foundry-0078D4?logo=microsoftazure)](https://ai.azure.com)
+[![License: MIT](https://img.shields.io/badge/License-MIT-green)](LICENSE)
 
-***
+OpsMind AI is a **grounded, cited incident troubleshooting agent** for cloud and DevOps operations teams. Given an incident description, it retrieves the most relevant runbooks from a knowledge base powered by **Microsoft Azure AI Foundry IQ**, classifies the incident, and returns structured diagnostic and remediation guidance — with full source citations.
 
-## Why OpsMind AI?
+---
 
-Cloud incidents happen fast, and engineers often lose precious minutes searching scattered runbooks, postmortems, and alert notes. OpsMind AI retrieves grounded troubleshooting guidance from a Microsoft Foundry IQ knowledge base and turns it into cited diagnosis, remediation, validation, and escalation steps in seconds. It is designed to help on-call teams move faster without making unsafe or unsupported changes.
+## ✨ Key Features
 
-***
+- 🔍 **Grounded retrieval** — answers are backed by runbooks from Foundry IQ, not hallucinated
+- 📄 **Full citations** — every diagnosis and remediation step references a specific source `[doc_id]`
+- 🏷️ **Smart classification** — automatically maps incidents to: `compute`, `kubernetes`, `database`, `networking`, `storage`, `security`, `application`
+- ⚠️ **Risk & safety layer** — flags high-risk actions and requires human approval before destructive changes
+- 🖥️ **Streamlit UI** — clean, interactive web interface for ops teams
+- 💻 **CLI mode** — scriptable for CI/CD pipelines and alerting integrations
+- 🔄 **Dual retrieval** — Foundry IQ (cloud) or local markdown runbooks (offline/dev)
 
-## Architecture
+---
 
-```text
-User Input
-    |
-    v
-Streamlit UI
-    |
-    v
-IncidentAnalyzer
-    |
-    v
-FoundryIQClient ------------------> Azure AI Foundry
-    |                                      |
-    |                                      v
-    |                              Foundry IQ Knowledge Base
-    |
-    +---- fallback ----> LocalRetriever
-                         |
-                         v
-TroubleshootingResponse -> Formatter -> UI Output
+## 🏗️ Architecture
+
+```
+┌─────────────────────────────────────────────────┐
+│              OpsMind AI Agent                   │
+│                                                 │
+│  Input: Incident description + severity + env   │
+│         ↓                                       │
+│  IncidentAnalyzer                               │
+│    ├── FoundryIQClient ──► Azure gpt-4o         │
+│    │       └── Retrieves top-K runbooks         │
+│    ├── classify_incident()  (keyword matching)  │
+│    ├── assess_risk()        (safety layer)      │
+│    └── build_response()     (structured output) │
+│         ↓                                       │
+│  TroubleshootingResponse (cited Markdown)       │
+│                                                 │
+│  Interfaces: Streamlit UI · CLI                 │
+└─────────────────────────────────────────────────┘
+         │
+         ▼
+┌────────────────────────┐
+│  Azure AI Foundry      │
+│  Project: proj-default │
+│  Model:   gpt-4o       │
+│  Index:   runbooks     │
+└────────────────────────┘
 ```
 
-***
+---
 
-## Features
+## 🚀 Quick Start
 
-- 🔍 **Grounded retrieval** via Microsoft Foundry IQ knowledge base
-- 🧠 **Multi-step reasoning**: classify → retrieve → diagnose → remediate → validate → escalate
-- 📄 **Cited answers**: every recommendation links to source runbooks
-- ⚠️ **Safety guardrails**: risk assessment and human review warnings
-- 🏃 **Local fallback mode**: works without Azure for development and testing
-- 🖥️ **Streamlit UI** + CLI interface
-- 8 pre-built runbooks covering: CPU spike, disk full, VM connectivity, DNS, SSL,
-  Kubernetes pod crashloop, HTTP 502/503, failed deployment
+### Prerequisites
 
-***
+- Python 3.11+
+- Azure AI Foundry project with `gpt-4o` deployment
+- API key from [Azure AI Foundry portal](https://ai.azure.com)
 
-## Supported Incident Categories
-
-| Category | Example Incidents |
-|---|---|
-| Compute | Linux VM CPU spike, VM unreachable |
-| Storage | Disk space critical, filesystem full |
-| Networking | DNS resolution failure, NSG blocking |
-| Security | SSL certificate expiry, TLS error |
-| Application | HTTP 502/503, gateway error |
-| Kubernetes | Pod crashloop, deployment failure |
-
-***
-
-## Tech Stack
-
-| Component | Technology |
-|---|---|
-| Language | Python 3.11 |
-| Knowledge Retrieval | Microsoft Foundry IQ |
-| Azure SDK | azure-ai-projects |
-| Authentication | DefaultAzureCredential / API Key |
-| UI | Streamlit |
-| CLI | Python argparse |
-| Tests | pytest |
-
-***
-
-## Microsoft Foundry IQ Integration
-
-Foundry IQ provides a reusable knowledge layer for agents, backed by Azure AI Search and agentic retrieval. OpsMind AI uses Foundry IQ as the primary retrieval source for runbooks and incident documents, requesting hybrid retrieval with citations enabled. Retrieved source snippets are normalized into `RetrievedSource` objects, then used by the analyzer to create grounded troubleshooting responses that reduce hallucination risk.
-
-If the SDK path is unavailable during local development, OpsMind can fall back to either the Foundry IQ REST endpoint or the local markdown retriever.
-
-***
-
-## Quick Start
-
-### Option A: Local mode (no Azure required)
+### 1. Clone & install
 
 ```bash
 git clone https://github.com/manuleague/OpsMind-AI-Incident-Troubleshooting-Runbook-Agent.git
 cd OpsMind-AI-Incident-Troubleshooting-Runbook-Agent
+python -m venv myenv
+source myenv/bin/activate  # Windows: myenv\Scripts\activate
 pip install -r requirements.txt
-cp .env.example .env
-# OPSMIND_RETRIEVAL_MODE is already set to "local" in .env.example
-streamlit run app/opsmind/ui_streamlit.py
 ```
 
-### Option B: Foundry IQ mode (full integration)
+### 2. Configure `.env`
 
 ```bash
 cp .env.example .env
-# Edit .env: set OPSMIND_RETRIEVAL_MODE=foundry and fill in Azure credentials
-# See docs/AZURE_SETUP.md for step-by-step Azure configuration
-streamlit run app/opsmind/ui_streamlit.py
 ```
 
-### CLI usage
+Edit `.env`:
 
+```env
+# Use "foundry" for Azure AI Foundry, "local" for offline testing
+OPSMIND_RETRIEVAL_MODE=foundry
+
+# Your Foundry project endpoint
+AZURE_AI_PROJECT_CONNECTION_STRING=https://<your-resource>.services.ai.azure.com/api/projects/<your-project>
+
+# API key from Foundry Home
+FOUNDRY_IQ_API_KEY=<your-api-key>
+
+FOUNDRY_IQ_AUTH_MODE=apikey
+OPSMIND_TOP_K=4
+```
+
+### 3. Run
+
+**Streamlit UI:**
 ```bash
-python -m app.opsmind.cli "Linux VM CPU spike above 95%" --severity sev2 --environment production
+streamlit run app/streamlit_app.py
+```
+Open → http://localhost:8501
+
+**CLI:**
+```bash
+python -m app.opsmind.cli "Linux VM CPU spike 95%"
+python -m app.opsmind.cli "AKS node NotReady after maintenance"
+python -m app.opsmind.cli "Azure SQL connection timeout 500 errors"
 ```
 
-***
+---
 
-## Environment Variables
+## 📋 Supported Incident Categories
 
-| Variable | Description | Default |
-|---|---|---|
-| `OPSMIND_RETRIEVAL_MODE` | Retrieval mode: `local` or `foundry` | `local` |
-| `OPSMIND_KB_PATH` | Local markdown runbook directory | `knowledge_base/runbooks` |
-| `OPSMIND_TOP_K` | Number of sources to retrieve | `4` |
-| `AZURE_AI_PROJECT_CONNECTION_STRING` | Azure AI Foundry project connection string for SDK mode | empty |
-| `FOUNDRY_IQ_AUTH_MODE` | Authentication mode: `credential` or `apikey` | `credential` |
-| `FOUNDRY_IQ_KNOWLEDGE_BASE_ID` | Foundry IQ knowledge base ID | empty |
-| `FOUNDRY_IQ_ENDPOINT` | REST fallback endpoint, usually Azure AI Search URL | empty |
-| `FOUNDRY_IQ_API_KEY` | API key for REST fallback or API key auth mode | empty |
-| `FOUNDRY_IQ_API_VERSION` | Foundry IQ REST API version | `2025-11-01-preview` |
-
-***
-
-## Demo Flow
-
-1. Enter an incident description, such as `Linux VM CPU spike above 95% for the last 10 minutes, application latency degraded`.
-2. Select severity and environment.
-3. Click Analyze to see cited evidence, diagnosis, remediation steps, validation checks, and escalation triggers.
-
-***
-
-## Judging Alignment
-
-| Criterion | How OpsMind addresses it |
+| Category | Example Incidents |
 |---|---|
-| Accuracy & Relevance | Grounded retrieval from Foundry IQ; answers cite source runbooks |
-| Reasoning & Multi-step | Pipeline: classify → retrieve → diagnose → remediate → validate → escalate |
-| Creativity & Originality | Ops-focused knowledge agent with safety guardrails |
-| UX & Presentation | Clean Streamlit UI with structured output sections |
-| Reliability & Safety | Risk labels, human review warnings, no destructive recommendations |
+| `compute` | CPU spike, VM unreachable, SSH timeout, VMSS scaling failure |
+| `kubernetes` | Pod CrashLoopBackOff, AKS node NotReady, OOMKilled, ImagePullBackOff |
+| `database` | SQL connection timeout, deadlock, connection pool exhaustion, high DTU |
+| `networking` | DNS resolution failure, NSG blocking, VNet connectivity, packet loss |
+| `storage` | Disk full, 403 Forbidden, blob access denied, IOPS throttling |
+| `security` | TLS certificate expired, 401 Unauthorized, Key Vault access denied |
+| `application` | 502/503 gateway errors, high latency, deployment failure, OOM |
 
-***
+---
 
-## Knowledge Base
+## 🔧 Retrieval Modes
 
-- `RB-CPU-001 Linux VM CPU Spike`: Diagnose high CPU, load average, process saturation, and safe mitigation.
-- `RB-DISK-001 Linux Disk Space Critically Low`: Handle filesystem usage, inode exhaustion, and safe cleanup.
-- `RB-SSL-001 SSL Certificate Expiration Warning`: Validate TLS expiry, renewal path, bindings, and chain health.
-- `RB-HTTP-001 Application Returning 502 or 503`: Triage gateway, backend health, deployment, and dependency failures.
-- `RB-DNS-001 DNS Resolution Failure`: Diagnose NXDOMAIN, SERVFAIL, stale records, private DNS, and resolver issues.
-- `RB-K8S-001 Kubernetes Pod CrashLoopBackOff`: Investigate restart loops, logs, probes, config, secrets, and dependencies.
-- `RB-DEPLOY-001 Failed Deployment or Bad Release`: Analyze failed releases, rollback safety, migrations, and feature flags.
-- `RB-VM-001 Azure VM Unreachable After Deployment`: Triage VM power, boot diagnostics, NSGs, routes, and health probes.
+| Mode | When to use | Config |
+|---|---|---|
+| `foundry` | Demo / production — uses Azure gpt-4o | `OPSMIND_RETRIEVAL_MODE=foundry` |
+| `local` | Offline / dev — uses local markdown runbooks | `OPSMIND_RETRIEVAL_MODE=local` |
 
-***
+---
 
-## Safety Considerations
+## 📁 Project Structure
 
-- OpsMind provides **recommendations only** — it does not execute commands
-- All high-risk actions are flagged with "Requires human review"
-- No confidential data is stored or logged
+```
+OpsMind-AI-Incident-Troubleshooting-Runbook-Agent/
+├── app/
+│   ├── streamlit_app.py          # Streamlit web UI
+│   └── opsmind/
+│       ├── analyzer.py           # Core incident analysis engine
+│       ├── foundry_iq.py         # Azure Foundry IQ REST client
+│       ├── local_retriever.py    # Local markdown retriever
+│       ├── models.py             # Data models
+│       ├── config.py             # Settings / .env loader
+│       ├── safety.py             # Risk assessment & human review
+│       └── cli.py                # CLI entrypoint
+├── knowledge_base/
+│   └── runbooks/                 # Local markdown runbooks (offline mode)
+├── .env.example                  # Environment template
+├── requirements.txt
+└── README.md
+```
 
-***
+---
 
-## Future Improvements
+## 🛡️ Safety & Human Review
 
-- Add more runbooks (monitoring, database, network security)
-- Connect to Azure Monitor alerts as live input
-- Add follow-up question flow
-- Support multi-language runbooks
+OpsMind AI enforces a **human-in-the-loop** safety layer:
 
-***
+- `sev1` / `critical` incidents always require human approval
+- Production environment incidents flag blast radius and rollback plan
+- Destructive actions (rollback, secret rotation, DNS change) are never executed automatically
+- All remediation steps are **recommendations only** — validated by a human before execution
 
-## Setup for Foundry IQ
+---
 
-See [docs/AZURE_SETUP.md](docs/AZURE_SETUP.md) for the complete Azure configuration guide.
+## 🏆 Hackathon: Agents League 2026
 
-***
+This project was built for the **Agents League Hackathon 2026**, demonstrating:
 
-## License
+- ✅ **Grounded AI** — no hallucinations, every answer cites a runbook source
+- ✅ **Azure AI Foundry integration** — production-grade agent with gpt-4o
+- ✅ **Responsible AI** — human review gates, risk classification, audit trail
+- ✅ **Real ops value** — reduces MTTR for cloud incidents with structured, actionable guidance
 
-MIT
+---
+
+## 📄 License
+
+MIT License — see [LICENSE](LICENSE)
+
+---
+
+<p align="center">
+  Built with ❤️ for <strong>Agents League Hackathon 2026</strong> · Powered by <strong>Microsoft Azure AI Foundry</strong>
+</p>
