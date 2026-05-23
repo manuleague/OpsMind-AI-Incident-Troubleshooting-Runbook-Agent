@@ -179,12 +179,3 @@ This project was built for the **Agents League Hackathon 2026**, demonstrating:
 
 ---
 
-## 📄 License
-
-MIT License — see [LICENSE](LICENSE)
-
----
-
-<p align="center">
-  Built with ❤️ for <strong>Agents League Hackathon 2026</strong> · Powered by <strong>Microsoft Azure AI Foundry</strong>
-</p>
