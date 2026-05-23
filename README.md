@@ -99,7 +99,7 @@ OPSMIND_TOP_K=4
 **Streamlit UI:**
 $env:PYTHONPATH = "C:\Users\danal\Desktop\OpsMind-AI-Incident-Troubleshooting-Runbook-Agent"
 ```bash
-streamlit run app/opsmind/ui_streamlit.py
+streamlit run app/streamlit_app.py
 ```
 Open → http://localhost:8501
 

@@ -15,9 +15,21 @@ HIGH_RISK_TERMS = {
     "payment",
 }
 
+BLAST_RADIUS_TERMS = {
+    "all",
+    "region",
+    "cluster",
+    "namespace",
+    "every",
+    "global",
+}
+
 
 def assess_risk(description: str, retrieved_text: str) -> RiskLevel:
     text = f"{description} {retrieved_text}".lower()
+    tokens = set(text.replace("/", " ").replace("-", " ").split())
+    if tokens & BLAST_RADIUS_TERMS:
+        return RiskLevel.HIGH
     if any(term in text for term in HIGH_RISK_TERMS):
         return RiskLevel.HIGH
     if any(term in text for term in ["restart", "rollback", "scale", "certificate", "dns", "connectivity"]):
@@ -36,4 +48,3 @@ def human_review_warnings(risk: RiskLevel) -> list[str]:
             "Human validation required before restarting services, changing DNS, rolling back, or modifying certificates.",
         ]
     return ["Human review recommended before making infrastructure changes."]
-

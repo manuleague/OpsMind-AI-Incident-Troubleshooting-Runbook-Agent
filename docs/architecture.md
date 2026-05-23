@@ -1,32 +1,71 @@
-# Architecture Recommendation
+# OpsMind AI Architecture
 
-## Best Stack
+OpsMind AI is a Python incident troubleshooting agent for cloud operations teams. It retrieves grounded runbook evidence from Foundry IQ when available and uses local markdown runbooks as an offline fallback.
 
-Use a simple Python app with Streamlit for the UI, a small incident analysis service, and a retrieval abstraction that calls Foundry IQ in production or local markdown files in demo mode.
+## Data Flow
 
-This is the best hackathon tradeoff because it is:
+```text
+Incident description + severity + environment
+        |
+        v
+Streamlit UI / CLI
+        |
+        v
+IncidentAnalyzer
+        |
+        +--> FoundryIQClient (primary, Foundry IQ REST)
+        |       |
+        |       v
+        |   gpt-4o + file search index / Foundry IQ knowledge base
+        |
+        +--> LocalMarkdownRetriever (offline fallback)
+        |
+        v
+RetrievedSource objects with doc_id, title, chunk text, score
+        |
+        v
+Classification + confidence + blast radius + safety assessment
+        |
+        v
+TroubleshootingResponse
+        |
+        v
+Formatter / Streamlit output / CLI output
+```
 
-- quick to build
-- easy to demo
-- simple for judges to understand
-- clearly centered on Foundry IQ
-- safe because it recommends actions but does not execute them
+## Foundry IQ Retrieval
 
-## Flow
+`app/opsmind/foundry_iq.py` calls the Azure Foundry REST chat completions endpoint for the configured gpt-4o deployment. The prompt asks Foundry IQ to retrieve relevant runbooks from the file search index and include document IDs, titles, chunk text, relevance scores, and remediation details.
 
-1. Engineer enters an incident description, severity, and environment.
-2. The app builds a retrieval query.
-3. Retrieval layer calls Foundry IQ knowledge base.
-4. Retrieved sources are normalized into citations.
-5. Incident analyzer classifies the issue and prepares a structured response.
-6. Safety layer labels risk and adds human review warnings.
-7. UI renders the final response and citation snippets.
+The client extracts citations from structured response fields when available. If the payload does not include structured citations, it parses `[doc_id]` references from the model response and converts them into `RetrievedSource` objects. HTTP 429 rate limits are retried once after three seconds. If Foundry retrieval fails, `IncidentAnalyzer` falls back to local markdown retrieval so the demo remains reliable offline.
 
-## Where Foundry IQ Fits
+## Classification
 
-Foundry IQ is the knowledge layer. It should index operational runbooks, known incident records, postmortems, and escalation guides. The agent depends on Foundry IQ to retrieve grounded evidence and citation-bearing source snippets.
+`classify_incident()` first trusts the top retrieved source metadata when available. This keeps the answer grounded in the runbook Foundry IQ actually selected. When metadata is unavailable, it uses keyword scoring across seven categories:
 
-## Keep It Simple
+- compute
+- kubernetes
+- database
+- networking
+- storage
+- security
+- application
 
-Do not build a heavy backend unless time remains. Streamlit plus Python services is enough for a polished solo-builder demo.
+Unknown incidents remain `unknown` when no category keywords match.
 
+## Reasoning Pipeline
+
+`IncidentAnalyzer.analyze()` performs the same sequence for UI and CLI:
+
+1. Retrieve sources.
+2. Classify the incident.
+3. Compute confidence from top retrieval score.
+4. Estimate blast radius from severity, category, and impact keywords.
+5. Assess risk and human review requirements.
+6. Build diagnosis, remediation, validation, escalation, rollback, and similar incident sections.
+
+## Safety Layer
+
+`app/opsmind/safety.py` assigns risk based on destructive operations, production changes, and blast-radius terms such as `all`, `region`, `cluster`, `namespace`, `every`, and `global`. High-risk incidents always produce human approval warnings.
+
+OpsMind never executes infrastructure changes. It only recommends actions and requires a rollback plan before remediation.

@@ -74,6 +74,9 @@ class IncidentAnalyzer:
         combined_text = "\n".join(source.content for source in sources)
         risk = assess_risk(incident.description, combined_text)
         citations = [source.citation() for source in sources]
+        blast_radius = estimate_blast_radius(incident, category)
+        rollback_plan = "Define rollback plan: [describe how to undo each remediation step]"
+        similar_incidents = build_similar_incidents(sources)
 
         if not sources:
             logger.warning("No sources retrieved for: %s", incident.description[:80])
@@ -81,13 +84,17 @@ class IncidentAnalyzer:
                 incident_summary=summarize_incident(incident),
                 likely_category=category,
                 confidence=ConfidenceLevel.LOW,
+                confidence_label=ConfidenceLevel.LOW.value.upper(),
                 risk=risk,
+                blast_radius=blast_radius,
                 evidence=["No sufficiently relevant knowledge-base source was retrieved."],
                 diagnosis=["Insufficient grounded evidence to provide a specific diagnosis."],
                 remediation=["Collect logs, metrics, recent change history, and service ownership context before taking action."],
                 validation=["Confirm whether the alert is still active and whether customer impact is ongoing."],
                 escalation=["Escalate to the service owner if impact is production-facing or severity is high."],
                 human_review_required=human_review_warnings(risk),
+                rollback_plan=rollback_plan,
+                similar_incidents=[],
                 citations=[],
             )
 
@@ -96,13 +103,17 @@ class IncidentAnalyzer:
             incident_summary=summarize_incident(incident),
             likely_category=category,
             confidence=confidence,
+            confidence_label=confidence.value.upper(),
             risk=risk,
+            blast_radius=blast_radius,
             evidence=build_evidence(sources),
-            diagnosis=build_diagnosis(category, sources),
+            diagnosis=build_diagnosis(incident.description, category, sources),
             remediation=build_remediation(category, sources),
             validation=build_validation(category),
             escalation=build_escalation(incident, category),
             human_review_required=human_review_warnings(risk),
+            rollback_plan=rollback_plan,
+            similar_incidents=similar_incidents,
             citations=citations,
         )
 
@@ -158,31 +169,51 @@ def build_evidence(sources: list[RetrievedSource]) -> list[str]:
     ]
 
 
-def build_diagnosis(category: str, sources: list[RetrievedSource]) -> list[str]:
+def build_diagnosis(description: str, category: str, sources: list[RetrievedSource]) -> list[str]:
     cited = ", ".join(f"[{source.source_id}]" for source in sources[:2])
+    root_causes = {
+        "application": "Likely causes include bad deployment, unhealthy backend targets, dependency timeouts, or connection pool exhaustion.",
+        "compute": "Likely causes include host saturation, VM boot or guest-agent issues, blocked management access, or runaway processes.",
+        "database": "Likely causes include connection pool exhaustion, long-running queries, locks, deadlocks, or database resource pressure.",
+        "kubernetes": "Likely causes include bad image, missing config or secret, failed probes, dependency failure, or resource limits.",
+        "networking": "Likely causes include DNS record errors, resolver failures, NSG/firewall denies, route changes, or private zone link issues.",
+        "security": "Likely causes include expired certificates, missing intermediates, incorrect bindings, or failed renewal automation.",
+        "storage": "Likely causes include log growth, temporary files, inode exhaustion, backups, or application write amplification.",
+    }
+    alternatives = {
+        "application": "This is probably not a pure network outage if backend health, deployment timing, or application logs match the retrieved runbook.",
+        "compute": "This is probably not an application-only issue if host CPU, boot diagnostics, or VM health are abnormal.",
+        "database": "This is probably not a frontend-only issue if connection pools, query latency, locks, or database health are degraded.",
+        "kubernetes": "This is probably not a generic gateway issue if pod restarts, probe failures, or container logs show the failure.",
+        "networking": "This is probably not an application deploy issue if DNS, routing, firewall, or resolver checks fail from impacted networks.",
+        "security": "This is probably not a capacity issue if TLS validation, certificate expiry, or chain validation is failing.",
+        "storage": "This is probably not a CPU issue if filesystem, inode, quota, or write checks are failing.",
+    }
     return [
-        f"The incident most closely matches the {category} runbook pattern based on retrieved sources {cited}.",
-        "Check recent changes first, then compare symptoms against metrics, logs, and dependency health before applying remediation.",
+        f"Step 1 - Symptom identification: The description says '{description[:160]}', which aligns with the {category} incident pattern in {cited}.",
+        f"Step 2 - Likely root causes: {root_causes.get(category, 'The retrieved sources indicate a known operational failure pattern.')}",
+        f"Step 3 - Ruling out alternatives: {alternatives.get(category, 'Avoid assuming a root cause until telemetry and recent changes are checked.')}",
+        "Step 4 - Diagnostic order: verify current impact, check recent changes, inspect telemetry/logs, validate dependencies, then choose the lowest-risk remediation.",
     ]
 
 
 def build_remediation(category: str, sources: list[RetrievedSource]) -> list[str]:
     primary = sources[0].source_id
     common = [
-        f"Follow the diagnostic order in [{primary}] before making changes.",
-        "Prefer reversible actions and document every change in the incident timeline.",
-        "Do not run destructive commands or modify production infrastructure without approval.",
+        f"2. Follow the diagnostic order in [{primary}] before making changes.",
+        "3. Prefer reversible actions and document every change in the incident timeline.",
+        "4. Do not run destructive commands or modify production infrastructure without approval.",
     ]
     category_specific = {
-        "kubernetes": "If a deployment caused the failure, consider rollback only after confirming image, config, probes, and dependency errors.",
-        "database": "Check connection pool exhaustion, active queries, blocking locks, and DTU/vCore utilization before restarting services.",
-        "application": "Check upstream health, gateway/backend pool status, deployment history, and application logs before restart or rollback.",
-        "compute": "Check host metrics, boot diagnostics, network rules, and guest agent health before resizing or redeploying.",
-        "storage": "Free safe temporary files only after identifying the consuming path and confirming retention requirements.",
-        "networking": "Validate DNS records, resolver behavior, TTL, NSG rules, and route tables before changing records or firewall policy.",
-        "security": "Validate certificate chain, expiry date, bindings, and renewal automation before replacing certificates.",
+        "kubernetes": "1. If a deployment caused the failure, consider rollback only after confirming image, config, probes, and dependency errors.",
+        "database": "1. Check connection pool exhaustion, active queries, blocking locks, and DTU/vCore utilization before restarting services.",
+        "application": "1. Check upstream health, gateway/backend pool status, deployment history, and application logs before restart or rollback.",
+        "compute": "1. Check host metrics, boot diagnostics, network rules, and guest agent health before resizing or redeploying.",
+        "storage": "1. Free safe temporary files only after identifying the consuming path and confirming retention requirements.",
+        "networking": "1. Validate DNS records, resolver behavior, TTL, NSG rules, and route tables before changing records or firewall policy.",
+        "security": "1. Validate certificate chain, expiry date, bindings, and renewal automation before replacing certificates.",
     }
-    return [category_specific.get(category, "Gather additional evidence before remediation."), *common]
+    return [category_specific.get(category, "1. Gather additional evidence before remediation."), *common]
 
 
 def build_validation(category: str) -> list[str]:
@@ -208,3 +239,29 @@ def build_escalation(incident: IncidentInput, category: str) -> list[str]:
     if category == "unknown":
         triggers.append("Escalate because the incident category could not be grounded in the knowledge base.")
     return triggers
+
+
+def estimate_blast_radius(incident: IncidentInput, category: str) -> str:
+    text = f"{incident.description} {incident.severity} {incident.environment}".lower()
+    if any(term in text for term in ["global", "all users", "every user", "all regions"]):
+        return "Global or all users"
+    if "region" in text:
+        return "All users in region"
+    if category == "kubernetes" and any(term in text for term in ["namespace", "all pods", "deployment"]):
+        return "All pods in namespace or deployment"
+    if category == "compute" and "vm" in text:
+        return "Single VM or VM scale set instance"
+    if category == "database":
+        return "Services sharing the database"
+    if incident.severity.lower() in {"sev1", "critical"}:
+        return "Production critical path"
+    return "Limited service scope"
+
+
+def build_similar_incidents(sources: list[RetrievedSource]) -> list[str]:
+    incidents: list[str] = []
+    for source in sources[:3]:
+        category = source.metadata.get("category", "unknown")
+        doc_id = source.metadata.get("doc_id", source.source_id)
+        incidents.append(f"{doc_id}: {source.title} ({category} pattern)")
+    return incidents

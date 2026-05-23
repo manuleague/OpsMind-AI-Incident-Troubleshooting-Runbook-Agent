@@ -3,6 +3,7 @@
 ```text
 OpsMind-AI-Incident-Troubleshooting-Runbook-Agent/
   app/
+    streamlit_app.py
     opsmind/
       __init__.py
       analyzer.py
@@ -21,9 +22,11 @@ OpsMind-AI-Incident-Troubleshooting-Runbook-Agent/
     assets/
       .gitkeep
     demo_script.md
+    run_demo.py
     sample_incidents.json
   docs/
-    architecture.md
+    ARCHITECTURE.md
+    HACKATHON.md
     architecture_diagram.mmd
     folder_tree.md
     implementation_plan.md
@@ -33,6 +36,7 @@ OpsMind-AI-Incident-Troubleshooting-Runbook-Agent/
   knowledge_base/
     runbooks/
       RB-CPU-001-linux-vm-cpu-spike.md
+      RB-DB-001-database-latency-connections.md
       RB-DEPLOY-001-failed-deployment.md
       RB-DISK-001-linux-disk-full.md
       RB-DNS-001-resolution-failure.md
@@ -48,9 +52,11 @@ OpsMind-AI-Incident-Troubleshooting-Runbook-Agent/
     system.md
   tests/
     test_analyzer.py
+    test_classification.py
     test_local_retriever.py
+    test_safety.py
+    test_validation.py
   pyproject.toml
   README.md
   requirements.txt
 ```
-

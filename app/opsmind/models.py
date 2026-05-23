@@ -55,12 +55,15 @@ class TroubleshootingResponse:
     incident_summary: str
     likely_category: str
     confidence: ConfidenceLevel
+    confidence_label: str
     risk: RiskLevel
+    blast_radius: str
     evidence: list[str]
     diagnosis: list[str]
     remediation: list[str]
     validation: list[str]
     escalation: list[str]
     human_review_required: list[str]
+    rollback_plan: str
+    similar_incidents: list[str]
     citations: list[Citation]
-
