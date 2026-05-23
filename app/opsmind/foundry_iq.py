@@ -9,255 +9,205 @@ from app.opsmind.models import RetrievedSource
 
 logger = logging.getLogger(__name__)
 
-ENDPOINT = "https://opsmind-foundry.services.ai.azure.com"
-AGENT_NAME = "foundry-agent"
-AGENT_VERSION = "3"
 
 class FoundryIQClient:
-    """Foundry IQ retrieves grounded knowledge-base content for agent responses.
+    """Retrieves grounded knowledge from the Foundry Agent (foundry-agent)
+    using the azure-ai-agents SDK (AgentsClient + threads/messages API).
 
-    Configure with `AZURE_AI_PROJECT_CONNECTION_STRING`,
-    `FOUNDRY_IQ_KNOWLEDGE_BASE_ID`, `FOUNDRY_IQ_AUTH_MODE`,
-    `FOUNDRY_IQ_ENDPOINT`, `FOUNDRY_IQ_API_KEY`, and
-    `FOUNDRY_IQ_API_VERSION`. SDK mode uses `DefaultAzureCredential` by
-    default, or `AzureKeyCredential` when `FOUNDRY_IQ_AUTH_MODE=apikey`.
-    If the `azure-ai-projects` SDK is unavailable or SDK authentication cannot
-    be initialized, the client falls back to the REST retrieval endpoint using
-    `requests.post()` and the `api-key` header.
+    Falls back to direct REST against the Foundry project endpoint if the
+    azure-ai-agents package is not installed.
+
+    Required .env variables:
+        AZURE_AI_PROJECT_CONNECTION_STRING  - project endpoint, e.g.
+            https://opsmind-foundry.services.ai.azure.com/api/projects/proj-default
+        FOUNDRY_IQ_API_KEY                  - API key from Foundry Home
+        FOUNDRY_IQ_KNOWLEDGE_BASE_ID        - agent ID shown in Foundry portal
+                                              (use the agent name: foundry-agent)
+        FOUNDRY_IQ_AUTH_MODE                - "apikey" (recommended) or "credential"
+        FOUNDRY_IQ_API_VERSION              - keep at 2025-05-15-preview
     """
+
+    # The agent name as it appears in Foundry portal
+    AGENT_NAME = "foundry-agent"
 
     def __init__(self, settings: Settings) -> None:
         self.settings = settings
 
     def is_configured(self) -> bool:
-        if not self.settings.foundry_iq_knowledge_base_id:
-            return False
-        if self.settings.azure_ai_project_connection_string:
-            return True
-        return bool(self.settings.foundry_iq_endpoint and self.settings.foundry_iq_api_key)
+        return bool(
+            self.settings.azure_ai_project_connection_string
+            and self.settings.foundry_iq_api_key
+        )
 
     def search(self, query: str, top_k: int = 4) -> list[RetrievedSource]:
         if not self.is_configured():
             raise ValueError(
                 "Foundry IQ is not configured. Set AZURE_AI_PROJECT_CONNECTION_STRING "
-                "and FOUNDRY_IQ_KNOWLEDGE_BASE_ID, or configure REST fallback variables."
+                "and FOUNDRY_IQ_API_KEY in .env."
             )
 
-        logger.info(
-            "Searching Foundry IQ knowledge base '%s' with auth mode '%s'",
-            self.settings.foundry_iq_knowledge_base_id,
-            self.settings.foundry_iq_auth_mode,
-        )
+        logger.info("Foundry IQ: querying agent '%s'", self.AGENT_NAME)
         logger.debug("Foundry IQ query: %s", query)
 
-        sdk_auth_error: ValueError | None = None
         try:
-            results = self._sdk_search(query=query, top_k=top_k)
-            logger.info("Foundry IQ SDK returned %d result(s)", len(results))
-            return results
+            return self._agents_sdk_search(query=query, top_k=top_k)
         except ImportError as exc:
-            logger.warning("azure-ai-projects SDK not installed; falling back to REST: %s", exc)
-        except ValueError as exc:
-            sdk_auth_error = exc
-            logger.exception("Foundry IQ SDK authentication failed; attempting REST fallback")
-        except TimeoutError:
-            logger.exception("Foundry IQ SDK request timed out")
-            raise
-        except Exception as exc:
-            if self._is_azure_exception(exc, "HttpResponseError"):
-                logger.exception("Foundry IQ SDK HTTP response error")
-                raise
-            if self._is_azure_exception(exc, "ClientAuthenticationError"):
-                logger.exception("Foundry IQ SDK client authentication error")
-                raise ValueError("Azure authentication failed. Run `az login` or check credentials.") from exc
-            logger.exception("Foundry IQ SDK retrieval failed; falling back to REST")
-
-        if sdk_auth_error and not (self.settings.foundry_iq_endpoint and self.settings.foundry_iq_api_key):
-            raise sdk_auth_error
-
-        results = self._rest_search(query=query, top_k=top_k)
-        logger.info("Foundry IQ REST fallback returned %d result(s)", len(results))
-        return results
-
-    def _sdk_search(self, query: str, top_k: int) -> list[RetrievedSource]:
-        try:
-            from azure.ai.projects import AIProjectClient
-            from azure.core.credentials import AzureKeyCredential
-            from azure.core.exceptions import ClientAuthenticationError, HttpResponseError
-            from azure.identity import DefaultAzureCredential
-        except ImportError:
-            raise
-
-        if not self.settings.azure_ai_project_connection_string:
-            raise RuntimeError("AZURE_AI_PROJECT_CONNECTION_STRING is not set for SDK mode.")
-
-        # Extract base endpoint (strip /api/projects/... path if present)
-        raw_conn = self.settings.azure_ai_project_connection_string
-        base_endpoint = raw_conn.split("/api/projects")[0] if "/api/projects" in raw_conn else raw_conn
-
-        try:
-            if self.settings.foundry_iq_auth_mode == "apikey":
-                if not self.settings.foundry_iq_api_key:
-                    raise ValueError("FOUNDRY_IQ_API_KEY is required when FOUNDRY_IQ_AUTH_MODE=apikey.")
-                credential = AzureKeyCredential(self.settings.foundry_iq_api_key)
-                logger.info("Using AzureKeyCredential for Foundry IQ SDK authentication")
-            else:
-                credential = DefaultAzureCredential()
-                logger.info("Using DefaultAzureCredential for Foundry IQ SDK authentication")
-
-            client = AIProjectClient(
-                endpoint=base_endpoint,
-                credential=credential,
+            logger.warning(
+                "azure-ai-agents SDK not installed; falling back to REST: %s", exc
             )
-        except ClientAuthenticationError as exc:
-            logger.exception("DefaultAzureCredential could not authenticate to Azure AI Foundry")
-            raise ValueError("Azure authentication failed. Run `az login` or check credentials.") from exc
+        except Exception:
+            logger.exception("Foundry IQ agents SDK failed; falling back to REST")
 
-        try:
-            payload = self._build_sdk_payload(query=query, top_k=top_k)
-            raw_results = self._invoke_sdk_knowledge_retrieval(client=client, payload=payload)
-            return self._normalize_results(raw_results)
-        except ClientAuthenticationError:
-            logger.exception("Azure AI Foundry rejected SDK credentials")
-            raise
-        except HttpResponseError:
-            logger.exception("Azure AI Foundry returned an HTTP error")
-            raise
-        except TimeoutError:
-            logger.exception("Azure AI Foundry SDK retrieval timed out")
-            raise
+        return self._rest_chat_search(query=query, top_k=top_k)
 
-    def _invoke_sdk_knowledge_retrieval(self, client: Any, payload: dict[str, Any]) -> Any:
-        agents = getattr(client, "agents", None)
-        if agents is None:
-            raise AttributeError("AIProjectClient does not expose an agents client.")
+    # ------------------------------------------------------------------
+    # Path A: azure-ai-agents SDK  (pip install azure-ai-agents)
+    # ------------------------------------------------------------------
 
-        knowledge_retrieval = getattr(agents, "knowledge_retrieval", None)
-        if knowledge_retrieval is not None:
-            for method_name in ("retrieve", "search", "query", "run"):
-                method = getattr(knowledge_retrieval, method_name, None)
-                if callable(method):
-                    logger.debug("Invoking client.agents.knowledge_retrieval.%s", method_name)
-                    return method(**payload)
+    def _agents_sdk_search(self, query: str, top_k: int) -> list[RetrievedSource]:
+        """Use AgentsClient to create a thread, run the foundry-agent,
+        and parse its reply as retrieved sources."""
+        from azure.ai.agents import AgentsClient  # type: ignore
+        from azure.ai.agents.models import MessageTextContent  # type: ignore
+        from azure.core.credentials import AzureKeyCredential
 
-        for method_name in ("knowledge_retrieval", "retrieve_knowledge", "retrieve_from_knowledge_base"):
-            method = getattr(agents, method_name, None)
-            if callable(method):
-                logger.debug("Invoking client.agents.%s", method_name)
-                return method(**payload)
+        endpoint = self._base_endpoint()
+        credential = AzureKeyCredential(self.settings.foundry_iq_api_key)
 
-        raise AttributeError(
-            "Installed azure-ai-projects SDK does not expose a supported Foundry IQ "
-            "knowledge retrieval method. Update azure-ai-projects or use REST fallback."
+        with AgentsClient(endpoint=endpoint, credential=credential) as client:
+            # Resolve agent by name
+            agent = self._resolve_agent(client)
+
+            # Create thread + message
+            thread = client.threads.create()
+            client.messages.create(
+                thread_id=thread.id,
+                role="user",
+                content=(
+                    f"Retrieve the top {top_k} runbook(s) most relevant to this "
+                    f"incident. Return each runbook title, its doc_id, and a "
+                    f"diagnostic summary. Incident: {query}"
+                ),
+            )
+
+            # Run and wait
+            run = client.runs.create_and_process(thread_id=thread.id, agent_id=agent.id)
+            logger.info("Agent run status: %s", run.status)
+
+            # Extract text from last assistant message
+            messages = client.messages.list(thread_id=thread.id)
+            for msg in messages:
+                if msg.role == "assistant":
+                    text = ""
+                    for block in msg.content:
+                        if isinstance(block, MessageTextContent):
+                            text += block.text.value
+                    if text:
+                        return [RetrievedSource(
+                            source_id="foundry-agent-response",
+                            title="Foundry Agent Response",
+                            path="foundry-agent",
+                            content=text,
+                            score=1.0,
+                            metadata={"retriever": "foundry_iq_agents_sdk"},
+                        )]
+
+        return []
+
+    def _resolve_agent(self, client: Any) -> Any:
+        """Find the foundry-agent by name from the agents list."""
+        for agent in client.list_agents():
+            if agent.name == self.AGENT_NAME:
+                logger.info("Resolved agent id: %s", agent.id)
+                return agent
+        raise RuntimeError(
+            f"Agent '{self.AGENT_NAME}' not found in Foundry project. "
+            "Check the agent name in Foundry portal > Build > Agents."
         )
 
-    def _rest_search(self, query: str, top_k: int) -> list[RetrievedSource]:
-        if not self.settings.foundry_iq_endpoint or not self.settings.foundry_iq_api_key:
-            raise ValueError(
-                "REST fallback requires FOUNDRY_IQ_ENDPOINT and FOUNDRY_IQ_API_KEY."
-            )
+    # ------------------------------------------------------------------
+    # Path B: REST fallback via Azure OpenAI chat completions endpoint
+    # ------------------------------------------------------------------
 
-        try:
-            import requests
-            from requests import Timeout
-        except ImportError as exc:
-            raise RuntimeError("Install requests to use Foundry IQ REST fallback.") from exc
+    def _rest_chat_search(self, query: str, top_k: int) -> list[RetrievedSource]:
+        """Call the Azure OpenAI chat completions endpoint that backs the
+        Foundry project. Uses the project's OpenAI endpoint derived from
+        AZURE_AI_PROJECT_CONNECTION_STRING."""
+        import requests
 
-        try:
-            response = requests.post(
-                self._build_rest_url(),
-                headers={
-                    "api-key": self.settings.foundry_iq_api_key,
-                    "content-type": "application/json",
+        openai_endpoint = self._openai_endpoint()
+        url = (
+            f"{openai_endpoint}/openai/deployments/gpt-4o/chat/completions"
+            f"?api-version=2025-01-01-preview"
+        )
+
+        system_prompt = (
+            "You are OpsMind AI, an expert incident troubleshooting assistant. "
+            "When given an incident description, retrieve and summarise the most "
+            "relevant runbooks. Include doc_id, title, diagnostic steps, and "
+            "remediation actions. Always cite your sources."
+        )
+
+        payload = {
+            "messages": [
+                {"role": "system", "content": system_prompt},
+                {
+                    "role": "user",
+                    "content": (
+                        f"Retrieve top {top_k} runbooks for: {query}. "
+                        "Return title, doc_id, and a brief diagnostic + remediation summary."
+                    ),
                 },
-                json=self._build_rest_payload(query, top_k),
-                timeout=30,
-            )
-            response.raise_for_status()
-        except Timeout:
-            logger.exception("Foundry IQ REST fallback request timed out")
-            raise
-        except Exception as exc:
-            logger.exception("Foundry IQ REST fallback request failed")
-            raise exc
-
-        return self._normalize_results(response.json())
-
-    def _build_rest_url(self) -> str:
-        kb_id = self.settings.foundry_iq_knowledge_base_id
-        version = self.settings.foundry_iq_api_version
-        # Ensure endpoint does not already contain /knowledgebases path
-        base = self.settings.foundry_iq_endpoint.rstrip("/")
-        if "/knowledgebases" not in base:
-            return f"{base}/knowledgebases/{kb_id}:retrieve?api-version={version}"
-        return f"{base}/{kb_id}:retrieve?api-version={version}"
-
-    def _build_sdk_payload(self, query: str, top_k: int) -> dict[str, Any]:
-        return {
-            "knowledge_base_id": self.settings.foundry_iq_knowledge_base_id,
-            "query": query,
-            "top_k": top_k,
-            "retrieval_mode": "hybrid",
-            "include_citations": True,
+            ],
+            "max_tokens": 1200,
+            "temperature": 0.1,
         }
 
-    @staticmethod
-    def _build_rest_payload(query: str, top_k: int) -> dict[str, Any]:
-        return {
-            "query": query,
-            "top": top_k,
-            "retrievalMode": "hybrid",
-            "includeCitations": True,
-        }
+        response = requests.post(
+            url,
+            headers={
+                "api-key": self.settings.foundry_iq_api_key,
+                "Content-Type": "application/json",
+            },
+            json=payload,
+            timeout=30,
+        )
+        response.raise_for_status()
+        data = response.json()
 
-    @staticmethod
-    def _normalize_results(payload: Any) -> list[RetrievedSource]:
-        if hasattr(payload, "as_dict"):
-            payload = payload.as_dict()
-        elif hasattr(payload, "__dict__") and not isinstance(payload, dict):
-            payload = vars(payload)
+        content = data["choices"][0]["message"]["content"]
+        logger.info("Foundry REST chat fallback returned %d chars", len(content))
 
-        if isinstance(payload, list):
-            raw_items = payload
-        elif isinstance(payload, dict):
-            raw_items = (
-                payload.get("results")
-                or payload.get("value")
-                or payload.get("citations")
-                or payload.get("documents")
-                or []
+        return [
+            RetrievedSource(
+                source_id="foundry-rest-response",
+                title="Foundry gpt-4o Response",
+                path="foundry-rest",
+                content=content,
+                score=1.0,
+                metadata={"retriever": "foundry_iq_rest"},
             )
-        else:
-            raw_items = []
+        ]
 
-        sources: list[RetrievedSource] = []
-        for index, item in enumerate(raw_items, start=1):
-            if hasattr(item, "as_dict"):
-                item = item.as_dict()
-            elif hasattr(item, "__dict__") and not isinstance(item, dict):
-                item = vars(item)
-            if not isinstance(item, dict):
-                continue
+    # ------------------------------------------------------------------
+    # Helpers
+    # ------------------------------------------------------------------
 
-            title = item.get("title") or item.get("sourceName") or item.get("source_name") or f"Foundry IQ Source {index}"
-            content = item.get("content") or item.get("text") or item.get("snippet") or item.get("summary") or ""
-            path = item.get("url") or item.get("path") or item.get("source") or item.get("source_url") or "foundry-iq"
-            source_id = item.get("id") or item.get("sourceId") or item.get("source_id") or f"fiq-{index}"
-            score = float(item.get("score") or item.get("@search.score") or item.get("reranker_score") or 0.0)
+    def _base_endpoint(self) -> str:
+        """Return base Foundry endpoint (no /api/projects path)."""
+        raw = (self.settings.azure_ai_project_connection_string or "").rstrip("/")
+        return raw.split("/api/projects")[0] if "/api/projects" in raw else raw
 
-            if content:
-                sources.append(
-                    RetrievedSource(
-                        source_id=str(source_id),
-                        title=str(title),
-                        path=str(path),
-                        content=str(content),
-                        score=score,
-                        metadata={"retriever": "foundry_iq"},
-                    )
-                )
-
-        return sources
+    def _openai_endpoint(self) -> str:
+        """Return the Azure OpenAI endpoint for REST fallback.
+        Converts https://opsmind-foundry.services.ai.azure.com
+        to      https://opsmind-foundry.openai.azure.com
+        """
+        base = self._base_endpoint()
+        # Replace .services.ai.azure.com with .openai.azure.com
+        if ".services.ai.azure.com" in base:
+            return base.replace(".services.ai.azure.com", ".openai.azure.com")
+        return base
 
     @staticmethod
     def _is_azure_exception(exc: Exception, name: str) -> bool:
