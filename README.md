@@ -98,7 +98,7 @@ OPSMIND_TOP_K=4
 
 **Streamlit UI:**
 ```bash
-streamlit run app/streamlit_app.py
+streamlit run app/opsmind/ui_streamlit.py
 ```
 Open → http://localhost:8501
 
