@@ -9,7 +9,7 @@ from app.opsmind.models import RetrievedSource
 
 logger = logging.getLogger(__name__)
 
-ENDPOINT = "https://opsmind-foundry.services.ai.azure.com/api/projects/proj-default"
+ENDPOINT = "https://opsmind-foundry.services.ai.azure.com"
 AGENT_NAME = "foundry-agent"
 AGENT_VERSION = "3"
 
@@ -91,6 +91,10 @@ class FoundryIQClient:
         if not self.settings.azure_ai_project_connection_string:
             raise RuntimeError("AZURE_AI_PROJECT_CONNECTION_STRING is not set for SDK mode.")
 
+        # Extract base endpoint (strip /api/projects/... path if present)
+        raw_conn = self.settings.azure_ai_project_connection_string
+        base_endpoint = raw_conn.split("/api/projects")[0] if "/api/projects" in raw_conn else raw_conn
+
         try:
             if self.settings.foundry_iq_auth_mode == "apikey":
                 if not self.settings.foundry_iq_api_key:
@@ -101,9 +105,9 @@ class FoundryIQClient:
                 credential = DefaultAzureCredential()
                 logger.info("Using DefaultAzureCredential for Foundry IQ SDK authentication")
 
-            client = AIProjectClient.from_connection_string(
+            client = AIProjectClient(
+                endpoint=base_endpoint,
                 credential=credential,
-                conn_str=self.settings.azure_ai_project_connection_string,
             )
         except ClientAuthenticationError as exc:
             logger.exception("DefaultAzureCredential could not authenticate to Azure AI Foundry")
@@ -182,7 +186,11 @@ class FoundryIQClient:
     def _build_rest_url(self) -> str:
         kb_id = self.settings.foundry_iq_knowledge_base_id
         version = self.settings.foundry_iq_api_version
-        return f"{self.settings.foundry_iq_endpoint}/knowledgebases/{kb_id}:retrieve?api-version={version}"
+        # Ensure endpoint does not already contain /knowledgebases path
+        base = self.settings.foundry_iq_endpoint.rstrip("/")
+        if "/knowledgebases" not in base:
+            return f"{base}/knowledgebases/{kb_id}:retrieve?api-version={version}"
+        return f"{base}/{kb_id}:retrieve?api-version={version}"
 
     def _build_sdk_payload(self, query: str, top_k: int) -> dict[str, Any]:
         return {
