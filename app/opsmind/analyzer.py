@@ -45,10 +45,12 @@ CATEGORY_KEYWORDS = {
         "sas", "container", "quota", "inode", "full",
     ],
     "networking": [
-        "dns", "resolve", "connectivity", "nsg", "route",
-        "network", "firewall", "latency", "packet loss", "vnet",
+        "dns", "nxdomain", "resolution", "dns resolution", "dns failure",
+        "resolve", "connectivity", "nsg", "route",
+        "network", "firewall", "packet loss", "vnet",
         "subnet", "ip", "port", "tcp", "udp", "vpn",
         "expressroute", "load balancer", "traffic manager",
+        "private zone", "private dns", "resolver",
     ],
     "security": [
         "ssl", "certificate", "tls", "expiry", "expired",
@@ -57,6 +59,12 @@ CATEGORY_KEYWORDS = {
         "rotation", "rbac", "permission", "access",
     ],
 }
+
+# Category priority order: higher index = higher priority when scores tie
+CATEGORY_PRIORITY = [
+    "unknown", "application", "compute", "storage",
+    "database", "security", "kubernetes", "networking",
+]
 
 # Human-readable pattern descriptions per incident category
 CATEGORY_PATTERNS: dict[str, str] = {
@@ -149,8 +157,16 @@ def classify_incident(description: str, sources: list[RetrievedSource]) -> str:
         category: sum(1 for keyword in keywords if keyword in text)
         for category, keywords in CATEGORY_KEYWORDS.items()
     }
-    best_category, best_score = max(scores.items(), key=lambda item: item[1])
-    return best_category if best_score > 0 else "unknown"
+    best_score = max(scores.values())
+    if best_score == 0:
+        return "unknown"
+    # Among all categories with the best score, pick the one with highest priority
+    best_categories = [cat for cat, score in scores.items() if score == best_score]
+    best_category = max(
+        best_categories,
+        key=lambda cat: CATEGORY_PRIORITY.index(cat) if cat in CATEGORY_PRIORITY else -1,
+    )
+    return best_category
 
 
 def confidence_from_sources(sources: list[RetrievedSource]) -> ConfidenceLevel:
