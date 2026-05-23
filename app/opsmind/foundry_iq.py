@@ -13,6 +13,26 @@ logger = logging.getLogger(__name__)
 
 DOC_ID_RE = re.compile(r"\[([A-Za-z0-9_.:-]+)\]")
 
+# Patterns to extract the real runbook title from Foundry markdown responses
+_TITLE_PATTERNS = [
+    re.compile(r"\*\*Title:\*\*\s*(.+?)(?:\n|$)"),
+    re.compile(r"Runbook Title[:\*\s]+(.+?)(?:\n|$)"),
+    re.compile(r"###\s+\*\*(.+?)\*\*"),
+    re.compile(r"#{1,3}\s+(.+?)(?:\n|$)"),
+]
+
+
+def _extract_title_from_snippet(snippet: str, fallback: str) -> str:
+    """Parse the human-readable runbook title from a Foundry markdown snippet."""
+    for pattern in _TITLE_PATTERNS:
+        match = pattern.search(snippet)
+        if match:
+            candidate = match.group(1).strip().rstrip("*")
+            # Skip generic or very short matches
+            if len(candidate) > 6 and candidate.lower() not in {"runbook", "title", "summary"}:
+                return candidate
+    return fallback
+
 
 class FoundryIQClient:
     """Retrieves grounded knowledge from Azure Foundry via REST.
@@ -131,7 +151,9 @@ class FoundryIQClient:
             return [
                 RetrievedSource(
                     source_id=doc_id,
-                    title=self._title_from_doc_id(doc_id),
+                    title=_extract_title_from_snippet(
+                        fallback_content, self._title_from_doc_id(doc_id)
+                    ),
                     path="foundry-rest",
                     content=fallback_content,
                     score=1.0,
@@ -172,13 +194,6 @@ class FoundryIQClient:
                 or item.get("id")
                 or f"foundry-source-{index}"
             )
-            title = (
-                item.get("title")
-                or item.get("filepath")
-                or item.get("file_name")
-                or item.get("url")
-                or self._title_from_doc_id(str(doc_id))
-            )
             chunk_text = (
                 item.get("content")
                 or item.get("chunk")
@@ -187,6 +202,15 @@ class FoundryIQClient:
                 or item.get("quote")
                 or ""
             )
+            raw_title = (
+                item.get("title")
+                or item.get("filepath")
+                or item.get("file_name")
+                or item.get("url")
+                or self._title_from_doc_id(str(doc_id))
+            )
+            # Prefer the human-readable title embedded in the chunk text
+            title = _extract_title_from_snippet(chunk_text, str(raw_title))
             score = self._coerce_score(
                 item.get("score")
                 or item.get("relevance_score")
@@ -199,7 +223,7 @@ class FoundryIQClient:
             sources.append(
                 RetrievedSource(
                     source_id=str(doc_id),
-                    title=str(title),
+                    title=title,
                     path=str(path),
                     content=str(chunk_text),
                     score=score,

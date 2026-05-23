@@ -58,6 +58,17 @@ CATEGORY_KEYWORDS = {
     ],
 }
 
+# Human-readable pattern descriptions per incident category
+CATEGORY_PATTERNS: dict[str, str] = {
+    "compute": "VM resource exhaustion or host health degradation",
+    "kubernetes": "pod lifecycle or node scheduling failure",
+    "database": "connection or query performance degradation",
+    "networking": "connectivity or DNS resolution failure",
+    "storage": "disk I/O or quota exhaustion",
+    "security": "unauthorized access or credential issue",
+    "application": "service crash or dependency failure",
+}
+
 
 class IncidentAnalyzer:
     def __init__(self, settings: Settings | None = None) -> None:
@@ -76,7 +87,7 @@ class IncidentAnalyzer:
         citations = [source.citation() for source in sources]
         blast_radius = estimate_blast_radius(incident, category)
         rollback_plan = "Define rollback plan: [describe how to undo each remediation step]"
-        similar_incidents = build_similar_incidents(sources)
+        similar_incidents = build_similar_incidents(sources, category)
 
         if not sources:
             logger.warning("No sources retrieved for: %s", incident.description[:80])
@@ -258,10 +269,12 @@ def estimate_blast_radius(incident: IncidentInput, category: str) -> str:
     return "Limited service scope"
 
 
-def build_similar_incidents(sources: list[RetrievedSource]) -> list[str]:
+def build_similar_incidents(sources: list[RetrievedSource], category: str = "unknown") -> list[str]:
+    """Return human-readable similar incident descriptions using real runbook titles and category patterns."""
+    pattern = CATEGORY_PATTERNS.get(category, "infrastructure incident")
     incidents: list[str] = []
     for source in sources[:3]:
-        category = source.metadata.get("category", "unknown")
         doc_id = source.metadata.get("doc_id", source.source_id)
-        incidents.append(f"{doc_id}: {source.title} ({category} pattern)")
+        title = source.title
+        incidents.append(f"{doc_id}: {title} ({pattern})")
     return incidents
