@@ -13,12 +13,49 @@ logger = logging.getLogger(__name__)
 
 
 CATEGORY_KEYWORDS = {
-    "kubernetes": ["pod", "crashloop", "crash", "kubernetes", "k8s", "deployment"],
-    "application": ["502", "503", "gateway", "api", "app", "latency"],
-    "compute": ["cpu", "vm", "load", "unreachable", "ssh"],
-    "storage": ["disk", "space", "filesystem", "volume"],
-    "networking": ["dns", "resolve", "connectivity", "nsg", "route"],
-    "security": ["ssl", "certificate", "tls", "expiry", "expired"],
+    "kubernetes": [
+        "pod", "crashloop", "crash", "kubernetes", "k8s", "deployment",
+        "aks", "node", "notready", "not ready", "namespace", "helm",
+        "kubectl", "evicted", "oomkilled", "pending", "imagepullbackoff",
+        "container", "replicaset", "daemonset", "statefulset", "ingress",
+    ],
+    "database": [
+        "sql", "database", "db", "connection", "timeout", "query",
+        "postgres", "postgresql", "mysql", "cosmos", "cosmosdb",
+        "deadlock", "transaction", "replication", "replica", "primary",
+        "connection pool", "max connections", "azure sql", "rds",
+        "slow query", "lock", "blocking", "dtus",
+    ],
+    "application": [
+        "502", "503", "500", "gateway", "api", "app", "latency",
+        "response time", "error rate", "exception", "crash", "oom",
+        "memory", "heap", "service", "endpoint", "health check",
+        "deployment", "release", "rollback", "version",
+    ],
+    "compute": [
+        "cpu", "vm", "load", "unreachable", "ssh", "virtual machine",
+        "high cpu", "spike", "throttle", "rdp", "boot", "reboot",
+        "instance", "scale set", "vmss", "host", "hypervisor",
+        "linux vm", "windows vm", "compute",
+    ],
+    "storage": [
+        "disk", "space", "filesystem", "volume", "storage",
+        "blob", "bucket", "s3", "iops", "throughput",
+        "403", "forbidden", "access denied", "permission",
+        "sas", "container", "quota", "inode", "full",
+    ],
+    "networking": [
+        "dns", "resolve", "connectivity", "nsg", "route",
+        "network", "firewall", "latency", "packet loss", "vnet",
+        "subnet", "ip", "port", "tcp", "udp", "vpn",
+        "expressroute", "load balancer", "traffic manager",
+    ],
+    "security": [
+        "ssl", "certificate", "tls", "expiry", "expired",
+        "auth", "unauthorized", "401", "403", "token",
+        "secret", "key vault", "keyvault", "credential",
+        "rotation", "rbac", "permission", "access",
+    ],
 }
 
 
@@ -138,6 +175,7 @@ def build_remediation(category: str, sources: list[RetrievedSource]) -> list[str
     ]
     category_specific = {
         "kubernetes": "If a deployment caused the failure, consider rollback only after confirming image, config, probes, and dependency errors.",
+        "database": "Check connection pool exhaustion, active queries, blocking locks, and DTU/vCore utilization before restarting services.",
         "application": "Check upstream health, gateway/backend pool status, deployment history, and application logs before restart or rollback.",
         "compute": "Check host metrics, boot diagnostics, network rules, and guest agent health before resizing or redeploying.",
         "storage": "Free safe temporary files only after identifying the consuming path and confirming retention requirements.",
@@ -150,6 +188,7 @@ def build_remediation(category: str, sources: list[RetrievedSource]) -> list[str
 def build_validation(category: str) -> list[str]:
     checks = {
         "kubernetes": ["Pod restart count stops increasing.", "Readiness probes pass.", "Service error rate returns to baseline."],
+        "database": ["Connection success rate returns to baseline.", "Query latency is within SLA.", "No blocking locks or deadlocks remain."],
         "application": ["HTTP 5xx rate drops.", "Synthetic transaction succeeds.", "Gateway/backend health is green."],
         "compute": ["CPU or connectivity metrics recover.", "SSH/RDP or health probes succeed.", "No new platform events appear."],
         "storage": ["Disk usage is below alert threshold.", "Application writes succeed.", "No inode or quota alerts remain."],
