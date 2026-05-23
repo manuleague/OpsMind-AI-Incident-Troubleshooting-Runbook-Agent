@@ -9,6 +9,9 @@ from app.opsmind.models import RetrievedSource
 
 logger = logging.getLogger(__name__)
 
+ENDPOINT = "https://opsmind-foundry.services.ai.azure.com/api/projects/proj-default"
+AGENT_NAME = "foundry-agent"
+AGENT_VERSION = "3"
 
 class FoundryIQClient:
     """Foundry IQ retrieves grounded knowledge-base content for agent responses.
